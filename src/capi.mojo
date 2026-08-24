@@ -1,6 +1,5 @@
 """Byte-oriented XML tokenization and tree-step selection exposed through C ABI."""
 
-from std.algorithm import parallelize
 from std.sys.info import simd_width_of as simdwidthof
 
 comptime BPtr = UnsafePointer[UInt8, AnyOrigin[mut=True]]
@@ -431,7 +430,7 @@ def parallel_scan(
     comptime chunk_size = 4096
     var task_count = (nnodes + chunk_size - 1) // chunk_size
 
-    @parameter
+    @__parameter
     def scan_task(task: Int):
         var parents = IPtr(unsafe_from_address=parents_addr)
         var tags = UPtr(unsafe_from_address=tags_addr)
@@ -473,7 +472,8 @@ def parallel_scan(
             node += 1
         task_counts[task] = count
 
-    parallelize[scan_task](task_count, 4)
+    for task in range(task_count):
+        scan_task(task)
 
 
 def select_nodes(
