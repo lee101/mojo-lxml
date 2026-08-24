@@ -90,16 +90,39 @@ def tokenize(
     while i < n:
         if data[i] != 60:
             var start_pos = i
+            comptime W = simdwidthof[DType.float64]()
+            while i + W <= n:
+                var delimiters = data.load[width=W](i).eq(UInt8(60)).cast[
+                    DType.int64
+                ]()
+                if delimiters.reduce_add() != 0:
+                    break
+                i += W
             while i < n and data[i] != 60:
                 i += 1
-            var non_space = False
-            for j in range(start_pos, i):
-                if not is_space(data[j]):
-                    non_space = True
-            if not html_mode and depth == 0 and non_space:
-                error_info[0] = start_pos
-                error_info[1] = 1
-                return -1
+            if not html_mode and depth == 0:
+                var non_space = False
+                var j = start_pos
+                while j + W <= i:
+                    var chars = data.load[width=W](j)
+                    var spaces = (
+                        chars.eq(UInt8(32)).cast[DType.int64]()
+                        + chars.eq(UInt8(9)).cast[DType.int64]()
+                        + chars.eq(UInt8(10)).cast[DType.int64]()
+                        + chars.eq(UInt8(13)).cast[DType.int64]()
+                    )
+                    if spaces.reduce_add() != Int64(W):
+                        non_space = True
+                        break
+                    j += W
+                while not non_space and j < i:
+                    if not is_space(data[j]):
+                        non_space = True
+                    j += 1
+                if non_space:
+                    error_info[0] = start_pos
+                    error_info[1] = 1
+                    return -1
             if depth > 0 or html_mode:
                 count = emit(kinds, aa, bb, cc, dd, count, capacity, 3, start_pos, i)
                 if count < 0:

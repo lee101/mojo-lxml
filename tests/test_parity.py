@@ -360,6 +360,14 @@ def test_native_address_validation():
         addr(np.ones(8, dtype=np.int64)[::2])
 
 
+@pytest.mark.parametrize("length", [1, 3, 4, 5, 15, 16, 17, 31])
+def test_tokenizer_simd_text_tail(length):
+    source = ("<r>" + "x" * length + "</r>").encode()
+    assert signature(etree.fromstring(source)) == signature(
+        upstream.fromstring(source)
+    )
+
+
 def test_xpath_simd_tail_and_reused_workspace():
     root = etree.Element("root")
     selected = [etree.SubElement(root, "hit", index=str(index)) for index in range(17)]

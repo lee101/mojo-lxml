@@ -565,6 +565,7 @@ def _parse_markup(data: bytes, parser: XMLParser | HTMLParser, html_mode: bool) 
     stack: list[Element] = []
     roots: list[Element] = []
     orphan_text = ""
+    has_namespaces = not html_mode and b"xmlns" in data
 
     def piece(start: int, end: int) -> str:
         return data[start:end].decode(parser.encoding or "utf-8")
@@ -594,37 +595,45 @@ def _parse_markup(data: bytes, parser: XMLParser | HTMLParser, html_mode: bool) 
             attr_count = int(dd[index])
             attr_stop = index + attr_count + 1
             ns = stack[-1].nsmap if stack else {}
-            ns_copied = False
-            for attr_index in range(index + 1, attr_stop):
-                raw_name = piece(int(aa[attr_index]), int(bb[attr_index]))
-                if raw_name == "xmlns" or raw_name.startswith("xmlns:"):
-                    if not ns_copied:
-                        ns = dict(ns)
-                        ns_copied = True
-                    raw_value = piece(int(cc[attr_index]), int(dd[attr_index]))
-                    ns[None if raw_name == "xmlns" else raw_name[6:]] = raw_value
+            if has_namespaces:
+                ns_copied = False
+                for attr_index in range(index + 1, attr_stop):
+                    raw_name = piece(int(aa[attr_index]), int(bb[attr_index]))
+                    if raw_name == "xmlns" or raw_name.startswith("xmlns:"):
+                        if not ns_copied:
+                            ns = dict(ns)
+                            ns_copied = True
+                        raw_value = piece(int(cc[attr_index]), int(dd[attr_index]))
+                        ns[None if raw_name == "xmlns" else raw_name[6:]] = raw_value
 
             resolved_tag = (
                 raw_tag if html_mode or not ns else _qname(raw_tag, ns)
             )
             element = Element.__new__(Element)
             element._tag = resolved_tag
-            element.attrib = _Attrib(element)
+            attributes = _Attrib.__new__(_Attrib)
+            attributes._owner = element
+            attributes._values = {}
+            element.attrib = attributes
             element._text = None
             element.tail = None
             element._children = []
             element._parent = None
             element.nsmap = ns
             element._flat_cache = None
-            seen = set() if attr_count else None
+            seen = set() if attr_count and not html_mode else None
             for attr_index in range(index + 1, attr_stop):
                 raw_name = piece(int(aa[attr_index]), int(bb[attr_index]))
-                if raw_name == "xmlns" or raw_name.startswith("xmlns:"):
+                if has_namespaces and (
+                    raw_name == "xmlns" or raw_name.startswith("xmlns:")
+                ):
                     continue
                 raw_value = piece(int(cc[attr_index]), int(dd[attr_index]))
                 if html_mode:
                     raw_name = raw_name.lower()
-                    if b"=" not in data[int(bb[attr_index]):int(cc[attr_index])]:
+                    if data.find(
+                        b"=", int(bb[attr_index]), int(cc[attr_index]) + 1
+                    ) < 0:
                         raw_value = raw_name
                     name = raw_name
                 else:
@@ -632,9 +641,10 @@ def _parse_markup(data: bytes, parser: XMLParser | HTMLParser, html_mode: bool) 
                     name = (
                         _qname(raw_name, ns, attribute=True) if ns else raw_name
                     )
-                if name in seen and not html_mode:
+                if seen is not None and name in seen:
                     raise XMLSyntaxError(f"Attribute {name} redefined")
-                seen.add(name)
+                if seen is not None:
+                    seen.add(name)
                 element.attrib._values[name] = _decode_entities(raw_value, html_mode)
 
             is_self_closing = bool(cc[index])
@@ -664,10 +674,13 @@ def _parse_markup(data: bytes, parser: XMLParser | HTMLParser, html_mode: bool) 
             raw_end = piece(int(aa[index]), int(bb[index]))
             raw_end = raw_end.lower() if html_mode else raw_end
             if html_mode:
-                for pos in range(len(stack) - 1, -1, -1):
-                    if stack[pos].tag == raw_end:
-                        del stack[pos:]
-                        break
+                if stack and stack[-1].tag == raw_end:
+                    stack.pop()
+                else:
+                    for pos in range(len(stack) - 1, -1, -1):
+                        if stack[pos].tag == raw_end:
+                            del stack[pos:]
+                            break
             elif stack:
                 stack.pop()
         index += 1

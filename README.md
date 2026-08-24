@@ -97,10 +97,10 @@ Linux x86-64. Times are the best of 3 or 5 runs. The relative column is
 
 | Workload | mojo-lxml | lxml | Relative |
 |---|---:|---:|---:|
-| XML parse, 25k records | 716.44 ms | 60.23 ms | 0.08x |
-| HTML parse, 25k rows | 659.82 ms | 79.99 ms | 0.12x |
-| XPath attr filter, 75k nodes | 0.80 ms | 41.67 ms | 52.39x |
-| XML serialize, 25k records | 148.06 ms | 23.07 ms | 0.16x |
+| XML parse, 25k records | 448.12 ms | 46.39 ms | 0.10x |
+| HTML parse, 25k rows | 466.17 ms | 54.04 ms | 0.12x |
+| XPath attr filter, 75k nodes | 0.85 ms | 21.55 ms | 25.33x |
+| XML serialize, 25k records | 71.89 ms | 13.52 ms | 0.19x |
 
 Upstream lxml is a thin, mature Cython layer over highly optimized libxml2 data
 structures. mojo-lxml still pays for Python element construction after its Mojo
@@ -108,9 +108,12 @@ scan, which dominates parsing. XPath's contiguous tree representation and work
 buffers are cached until the tree is mutated, avoiding repeated flattening,
 symbol construction, and allocation.
 
-No GPU path is provided. Tokenization and selection are branch-heavy scans for
-which transfer and launch overhead would dominate. The CPU remains the only
-execution path.
+No GPU path is provided. Tokenization, tree construction, selection, and
+serialization are branch-heavy and below roughly two operations per byte, so
+device transfer and launch overhead would dominate. The CPU remains the only
+execution path. Parsing is sequential because nesting state is carried between
+tokens; the independent large-tree selector was not changed because it is
+already more than 5x faster than upstream lxml.
 
 ## How it works
 
@@ -127,10 +130,9 @@ contiguous parent indices, tree-local integer symbols, and per-node contiguous
 attribute ranges. The cached Mojo selector evaluates child, descendant, self,
 tag, attribute, and position tests into reusable caller-owned work buffers.
 The symbols identify tags and attribute strings without hash-collision risk.
-Tag blocks and result copies use host-width SIMD with scalar tails. Selection
-uses a bounded worker pool for large trees. Results are indices mapped back to
-the original element objects; source strings and returned values remain
-ordinary Python strings.
+Tokenizer text scans, tag blocks, and result copies use host-width SIMD with
+scalar tails. Results are indices mapped back to the original element objects;
+source strings and returned values remain ordinary Python strings.
 
 Run the locked benchmark with:
 
