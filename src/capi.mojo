@@ -11,7 +11,7 @@ def copy_ints(destination: IPtr, source: IPtr, count: Int):
     comptime W = simdwidthof[DType.float64]()
     var i = 0
     while i + W <= count:
-        destination.store(i, source.load[width=W](i))
+        destination.store(i, source.unsafe_load[width=W](i))
         i += W
     while i < count:
         destination[i] = source[i]
@@ -92,7 +92,7 @@ def tokenize(
             var start_pos = i
             comptime W = simdwidthof[DType.float64]()
             while i + W <= n:
-                var delimiters = data.load[width=W](i).eq(UInt8(60)).cast[
+                var delimiters = data.unsafe_load[width=W](i).eq(UInt8(60)).cast[
                     DType.int64
                 ]()
                 if delimiters.reduce_add() != 0:
@@ -104,7 +104,7 @@ def tokenize(
                 var non_space = False
                 var j = start_pos
                 while j + W <= i:
-                    var chars = data.load[width=W](j)
+                    var chars = data.unsafe_load[width=W](j)
                     var spaces = (
                         chars.eq(UInt8(32)).cast[DType.int64]()
                         + chars.eq(UInt8(9)).cast[DType.int64]()
@@ -470,7 +470,7 @@ def parallel_scan(
         comptime W = simdwidthof[DType.float64]()
         if tag != 0:
             while node + W <= end:
-                var tag_matches = tags.load[width=W](node).eq(
+                var tag_matches = tags.unsafe_load[width=W](node).eq(
                     tag
                 ).cast[DType.int64]()
                 if tag_matches.reduce_add() != 0:
@@ -563,7 +563,7 @@ def select_nodes(
             comptime W = simdwidthof[DType.float64]()
             if step_tags[step] != 0:
                 while node + W <= nnodes:
-                    var tag_matches = tags.load[width=W](node).eq(
+                    var tag_matches = tags.unsafe_load[width=W](node).eq(
                         step_tags[step]
                     ).cast[DType.int64]()
                     if tag_matches.reduce_add() != 0:
